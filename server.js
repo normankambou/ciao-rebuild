@@ -2,6 +2,7 @@ const http  = require('http');
 const https = require('https');
 const fs    = require('fs');
 const path  = require('path');
+const PORT  = process.env.PORT || 3001;
 
 // ── Env ───────────────────────────────────────────────────────────────────────
 
@@ -328,5 +329,4 @@ http.createServer(async (req, res) => {
     console.error('[Server]', err.message);
     json(500, { error: err.message });
   }
-const PORT = process.env.PORT || 3001;
 }).listen(PORT, () => console.log(`Running at http://localhost:${PORT}`));
