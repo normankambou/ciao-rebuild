@@ -1,0 +1,9 @@
+{
+  "name": "ciao-rebuild",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.55.0"
+  }
+}
