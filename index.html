@@ -622,14 +622,159 @@
       border-radius: 8px;
       border: 1px solid #FECACA;
     }
+
+    /* ── Auth screen ──────────────────────────────────────────────────────────── */
+    .auth-loading {
+      text-align: center;
+      padding: 48px 0;
+      color: var(--text-muted);
+    }
+    .auth-loading p { margin-top: 16px; font-size: 0.95rem; }
+
+    .auth-card {
+      margin: 28px 0 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow);
+    }
+
+    .auth-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+
+    .auth-tab {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      background: transparent;
+      font-family: inherit;
+      font-size: 0.92rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .auth-tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+    .auth-input {
+      width: 100%;
+      display: block;
+      padding: 11px 14px;
+      margin-bottom: 10px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      font-family: inherit;
+      font-size: 0.95rem;
+      color: var(--text);
+      background: var(--surface);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .auth-input:focus { border-color: var(--blue); }
+
+    .auth-submit-btn { width: 100%; margin-top: 4px; }
+
+    .auth-msg {
+      font-size: 0.85rem;
+      margin-top: 10px;
+      padding: 9px 13px;
+      border-radius: 8px;
+    }
+    .auth-error   { background: #FEF2F2; color: #B91C1C; border: 1px solid #FECACA; }
+    .auth-success { background: #F0FDF4; color: #15803D; border: 1px solid #BBF7D0; }
+
+    .auth-or {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 18px 0;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+    .auth-or::before, .auth-or::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+    .auth-guest-btn  { width: 100%; }
+    .auth-guest-note { font-size: 0.8rem; color: var(--text-muted); text-align: center; margin-top: 10px; }
+
+    /* ── Session streak (review screen) ─────────────────────────────────────── */
+    .session-streak {
+      font-size: 0.86rem;
+      color: var(--text-muted);
+      padding: 10px 14px;
+      background: rgba(27,61,107,0.04);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      margin-bottom: 8px;
+    }
+
+    /* ── Status bar (logged-in / guest) ──────────────────────────────────────── */
+    #status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 2px 0 18px;
+      font-size: 0.84rem;
+      color: var(--text-muted);
+    }
   </style>
 </head>
 <body>
 
-  <!-- Landing screen -->
-  <div id="landing-screen" class="screen">
+  <!-- Auth screen -->
+  <div id="auth-screen" class="screen">
     <h1 class="app-name">Ciao<span class="version-tag">v0.1</span></h1>
     <p class="tagline">Start a real conversation. Build real fluency.</p>
+
+    <div id="auth-loading" class="auth-loading">
+      <div class="spinner"></div>
+      <p>Checking your session&hellip;</p>
+    </div>
+
+    <div id="auth-card" class="auth-card" hidden>
+      <div class="auth-tabs">
+        <button class="auth-tab active" id="tab-signin">Sign in</button>
+        <button class="auth-tab"        id="tab-signup">Create account</button>
+      </div>
+
+      <!-- Sign-in form -->
+      <div id="auth-signin-form">
+        <input type="email"    id="si-email" class="auth-input" placeholder="Email address"  autocomplete="email">
+        <input type="password" id="si-pass"  class="auth-input" placeholder="Password"       autocomplete="current-password">
+        <button id="signin-btn" class="btn-primary auth-submit-btn">Sign in</button>
+        <p id="si-error" class="auth-msg auth-error" hidden></p>
+      </div>
+
+      <!-- Sign-up form -->
+      <div id="auth-signup-form" hidden>
+        <input type="email"    id="su-email" class="auth-input" placeholder="Email address"         autocomplete="email">
+        <input type="password" id="su-pass"  class="auth-input" placeholder="Password (min 6 chars)" autocomplete="new-password">
+        <button id="signup-btn" class="btn-primary auth-submit-btn">Create account</button>
+        <p id="su-error"   class="auth-msg auth-error"   hidden></p>
+        <p id="su-success" class="auth-msg auth-success" hidden></p>
+      </div>
+
+      <div class="auth-or"><span>or</span></div>
+
+      <button id="guest-btn" class="btn-ghost auth-guest-btn">Continue as guest</button>
+      <p class="auth-guest-note">Guest sessions aren&rsquo;t saved &mdash; sign in to track your progress.</p>
+    </div>
+  </div>
+
+  <!-- Landing screen -->
+  <div id="landing-screen" class="screen" hidden>
+    <h1 class="app-name">Ciao<span class="version-tag">v0.1</span></h1>
+    <p class="tagline">Start a real conversation. Build real fluency.</p>
+
+    <div id="status-bar" hidden>
+      <span id="status-text"></span>
+      <button id="status-action-btn" class="btn-ghost" style="padding:6px 14px;font-size:0.82rem;"></button>
+    </div>
 
     <div class="persona-wrap">
       <span class="level-label">Conversation partner</span>
@@ -748,10 +893,12 @@
         <button id="new-session-btn" class="btn-ghost">New Session</button>
       </div>
     </div>
+    <p id="session-streak" class="session-streak" hidden></p>
     <div id="error-list"></div>
   </div>
 
   <script src="https://elevenlabs.io/convai-widget/index.js" async></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -8,21 +8,32 @@
   var selectedTopic      = '';
   var agentIds           = { french: '', portuguese: '', spanish: '', japanese: '', english: '', persian: '' };
 
+  // ── Auth state ─────────────────────────────────────────────────────────────
+  var supabaseClient = null;
+  var currentUser    = null;
+  var isGuest        = false;
+
   var configPromise = fetch('/api/config')
     .then(function (r) { return r.json(); })
     .then(function (cfg) { agentIds = cfg.agents || agentIds; })
     .catch(function () { /* server unreachable — agentIds stay empty */ });
 
-  var landingScreen = document.getElementById('landing-screen');
-  var convScreen    = document.getElementById('conv-screen');
-  var procScreen    = document.getElementById('proc-screen');
-  var revScreen     = document.getElementById('rev-screen');
-  var widgetSlot    = document.getElementById('widget-slot');
-  var endBtn        = document.getElementById('end-btn');
-  var errorMsg      = document.getElementById('error-msg');
+  var authScreen      = document.getElementById('auth-screen');
+  var authLoading     = document.getElementById('auth-loading');
+  var authCard        = document.getElementById('auth-card');
+  var landingScreen   = document.getElementById('landing-screen');
+  var convScreen      = document.getElementById('conv-screen');
+  var procScreen      = document.getElementById('proc-screen');
+  var revScreen       = document.getElementById('rev-screen');
+  var widgetSlot      = document.getElementById('widget-slot');
+  var endBtn          = document.getElementById('end-btn');
+  var errorMsg        = document.getElementById('error-msg');
+  var statusBar       = document.getElementById('status-bar');
+  var statusText      = document.getElementById('status-text');
+  var statusActionBtn = document.getElementById('status-action-btn');
 
   function show(el) {
-    [landingScreen, convScreen, procScreen, revScreen].forEach(function (s) { s.hidden = true; });
+    [authScreen, landingScreen, convScreen, procScreen, revScreen].forEach(function (s) { s.hidden = true; });
     el.hidden = false;
   }
 
@@ -34,6 +45,134 @@
     skipOnboarding = skipCb.checked;
     localStorage.setItem('ciao_skip_onboarding', skipOnboarding ? '1' : '0');
   });
+
+  // ── Auth ──────────────────────────────────────────────────────────────────────
+
+  function showAuthForms() {
+    authLoading.hidden = true;
+    authCard.hidden    = false;
+  }
+
+  function setStatusBar(text, btnLabel, btnAction) {
+    statusText.textContent      = text;
+    statusActionBtn.textContent = btnLabel;
+    statusActionBtn.onclick     = btnAction;
+    statusBar.hidden            = false;
+  }
+
+  function handleSignOut() {
+    if (supabaseClient) {
+      supabaseClient.auth.signOut().then(function () {
+        currentUser      = null;
+        isGuest          = false;
+        statusBar.hidden = true;
+        show(authScreen);
+        showAuthForms();
+      });
+    }
+  }
+
+  function onAuthSuccess(user) {
+    currentUser = user;
+    isGuest     = false;
+    setStatusBar(user.email, 'Sign out', handleSignOut);
+    show(landingScreen);
+  }
+
+  // Auth tab switching
+  var tabSignin  = document.getElementById('tab-signin');
+  var tabSignup  = document.getElementById('tab-signup');
+  var formSignin = document.getElementById('auth-signin-form');
+  var formSignup = document.getElementById('auth-signup-form');
+
+  tabSignin.addEventListener('click', function () {
+    tabSignin.classList.add('active');    tabSignup.classList.remove('active');
+    formSignin.hidden = false;            formSignup.hidden = true;
+  });
+  tabSignup.addEventListener('click', function () {
+    tabSignup.classList.add('active');    tabSignin.classList.remove('active');
+    formSignup.hidden = false;            formSignin.hidden = true;
+  });
+
+  // Sign in
+  document.getElementById('signin-btn').addEventListener('click', function () {
+    var email = document.getElementById('si-email').value.trim();
+    var pass  = document.getElementById('si-pass').value;
+    var errEl = document.getElementById('si-error');
+    errEl.hidden = true;
+    if (!email || !pass) { errEl.textContent = 'Please enter your email and password.'; errEl.hidden = false; return; }
+    var btn = this;
+    btn.disabled = true; btn.textContent = 'Signing in…';
+    supabaseClient.auth.signInWithPassword({ email: email, password: pass })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        onAuthSuccess(r.data.user);
+      })
+      .catch(function (err) {
+        errEl.textContent = err.message || 'Sign in failed. Please try again.';
+        errEl.hidden = false;
+        btn.disabled = false; btn.textContent = 'Sign in';
+      });
+  });
+
+  // Sign up
+  document.getElementById('signup-btn').addEventListener('click', function () {
+    var email = document.getElementById('su-email').value.trim();
+    var pass  = document.getElementById('su-pass').value;
+    var errEl = document.getElementById('su-error');
+    var okEl  = document.getElementById('su-success');
+    errEl.hidden = true; okEl.hidden = true;
+    if (!email || !pass) { errEl.textContent = 'Please enter your email and password.'; errEl.hidden = false; return; }
+    if (pass.length < 6) { errEl.textContent = 'Password must be at least 6 characters.'; errEl.hidden = false; return; }
+    var btn = this;
+    btn.disabled = true; btn.textContent = 'Creating account…';
+    supabaseClient.auth.signUp({ email: email, password: pass })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        if (r.data.session) {
+          onAuthSuccess(r.data.user);
+        } else {
+          okEl.textContent = 'Check your inbox to confirm your email, then sign in.';
+          okEl.hidden = false;
+          btn.disabled = false; btn.textContent = 'Create account';
+        }
+      })
+      .catch(function (err) {
+        errEl.textContent = err.message || 'Sign up failed. Please try again.';
+        errEl.hidden = false;
+        btn.disabled = false; btn.textContent = 'Create account';
+      });
+  });
+
+  // Guest
+  document.getElementById('guest-btn').addEventListener('click', function () {
+    isGuest     = true;
+    currentUser = null;
+    setStatusBar('Guest — sessions won’t be saved', 'Sign in', function () {
+      show(authScreen);
+      showAuthForms();
+    });
+    show(landingScreen);
+  });
+
+  // Init Supabase and check for an existing session on page load
+  fetch('/api/auth-config')
+    .then(function (r) { return r.json(); })
+    .then(function (cfg) {
+      if (!cfg.url) { showAuthForms(); return null; }
+      supabaseClient = window.supabase.createClient(cfg.url, cfg.anonKey);
+      return supabaseClient.auth.getSession();
+    })
+    .then(function (result) {
+      if (!result) return;
+      var session = result.data && result.data.session;
+      if (session && session.user) {
+        onAuthSuccess(session.user);
+      } else {
+        showAuthForms();
+      }
+    })
+    .catch(function () { showAuthForms(); });
 
   // ── Onboarding first messages ─────────────────────────────────────────────────
   // French/Portuguese: shown every session unless the global "Skip onboarding" checkbox is checked.
@@ -161,7 +300,7 @@ CONVERSATION ANGLES (use these for real opinions, not reciting facts)
 
   var ADAPTIVE_BLOCK = '\n\nADAPTIVE CALIBRATION — strictly internal, never reference or hint at this to the learner: Throughout the conversation, silently track the learner\'s demonstrated skill level by monitoring error frequency, response fluency, sentence complexity, and vocabulary range. Continuously adjust your own vocabulary complexity, sentence length, and pacing in real time to stay just slightly above the learner\'s demonstrated ability. Never announce, acknowledge, or hint at these adjustments — keep the calibration entirely invisible.';
 
-  function buildPrompt(level) {
+  function buildPrompt(level, persona) {
     var n = Math.min(10, Math.max(1, parseInt(level, 10) || 5));
     var levelPrompt;
     if (n <= 2)      levelPrompt = 'The learner rates their proficiency ' + n + '/10 — a complete beginner. Use only the most basic, high-frequency vocabulary. Keep every sentence very short and simple. Speak slowly and clearly. Focus exclusively on present tense and essential everyday expressions. Avoid all idioms and complex structures.';
@@ -173,6 +312,22 @@ CONVERSATION ANGLES (use these for real opinions, not reciting facts)
     if (selectedTopic && TOPICS[selectedTopic]) {
       var t = TOPICS[selectedTopic];
       prompt += '\n\nTOPIC FOCUS — ' + t.label + ':\n' + t.instruction + '\n\n' + t.kb;
+    }
+    // Inject milestone for next session if one is pending for this persona
+    if (!isGuest) {
+      var milestoneKey = 'ciao_pending_milestone_' + (persona || selectedPersona);
+      var pendingMilestone = null;
+      try {
+        pendingMilestone = JSON.parse(localStorage.getItem(milestoneKey) || 'null');
+        if (pendingMilestone) localStorage.removeItem(milestoneKey);
+      } catch {}
+      if (pendingMilestone) {
+        if (pendingMilestone.type === 'tier') {
+          prompt += '\n\nMILESTONE — acknowledge naturally in-character in your first exchange, never verbatim: This learner just crossed into a new level — "' + pendingMilestone.label + '". A brief, warm, in-character nod. Do not announce a level or score.' + (pendingMilestone.fact ? ' You know about them: ' + pendingMilestone.fact + '.' : '');
+        } else if (pendingMilestone.type === 'streak') {
+          prompt += '\n\nMILESTONE — acknowledge naturally in-character in your first exchange: This learner just set a new personal best — ' + pendingMilestone.value + ' exchanges in a row without switching to English. A brief, natural acknowledgment — you noticed they stayed in the language longer.';
+        }
+      }
     }
     return prompt;
   }
@@ -213,7 +368,7 @@ CONVERSATION ANGLES (use these for real opinions, not reciting facts)
 
     var w = document.createElement('elevenlabs-convai');
     w.setAttribute('agent-id', aid);
-    w.setAttribute('override-prompt', buildPrompt(level));
+    w.setAttribute('override-prompt', buildPrompt(level, pid));
     // ── First-message override ────────────────────────────────────────────────
     if (ONBOARDING_MESSAGES[pid]) {
       var showOnboarding;
@@ -359,11 +514,26 @@ CONVERSATION ANGLES (use these for real opinions, not reciting facts)
     errorMsg.hidden = true;
     show(procScreen);
 
-    fetch('/api/analyze-session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ conversationId: conversationId, persona: selectedPersona }),
-    })
+    var headersPromise;
+    if (!isGuest && supabaseClient && currentUser) {
+      headersPromise = supabaseClient.auth.getSession().then(function (r) {
+        var s = r && r.data && r.data.session;
+        var h = { 'Content-Type': 'application/json' };
+        if (s) h['Authorization'] = 'Bearer ' + s.access_token;
+        return h;
+      });
+    } else {
+      headersPromise = Promise.resolve({ 'Content-Type': 'application/json' });
+    }
+
+    headersPromise
+      .then(function (headers) {
+        return fetch('/api/analyze-session', {
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify({ conversationId: conversationId, persona: selectedPersona }),
+        });
+      })
       .then(function (r) {
         return r.json().then(function (d) {
           if (!r.ok) throw new Error(d.error || ('Server error ' + r.status));
@@ -371,6 +541,11 @@ CONVERSATION ANGLES (use these for real opinions, not reciting facts)
         });
       })
       .then(function (session) {
+        // Store the most significant milestone for the next session's prompt injection
+        if (!isGuest && session.milestones && session.milestones.length > 0) {
+          var m = session.milestones.find(function (x) { return x.type === 'tier'; }) || session.milestones[0];
+          try { localStorage.setItem('ciao_pending_milestone_' + (session.persona || selectedPersona), JSON.stringify(m)); } catch {}
+        }
         renderReview(session);
         show(revScreen);
       })
@@ -399,6 +574,17 @@ CONVERSATION ANGLES (use these for real opinions, not reciting facts)
   var SEVERITY_LABELS = { low: 'Minor', medium: 'Noticeable', high: 'Significant' };
 
   function renderReview(session) {
+    var streakEl = document.getElementById('session-streak');
+    if (streakEl) {
+      if (session.cleanTurnStreak > 0) {
+        streakEl.textContent = 'Best stretch today: ' + session.cleanTurnStreak +
+          (session.cleanTurnStreak === 1 ? ' exchange' : ' exchanges') + ' in a row';
+        streakEl.hidden = false;
+      } else {
+        streakEl.hidden = true;
+      }
+    }
+
     var list = document.getElementById('error-list');
     list.innerHTML = '';
 
@@ -469,11 +655,13 @@ CONVERSATION ANGLES (use these for real opinions, not reciting facts)
       btn.addEventListener('click', function () {
         card.querySelectorAll('.btn-understood, .btn-confusing').forEach(function (b) { b.disabled = true; });
         card.classList.add('resolved');
-        fetch('/api/sessions/' + sessId + '/errors/' + err.id, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: btn.dataset.status }),
-        }).catch(console.error);
+        if (!isGuest && currentUser) {
+          fetch('/api/sessions/' + sessId + '/errors/' + err.id, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: btn.dataset.status }),
+          }).catch(console.error);
+        }
       });
     });
 
