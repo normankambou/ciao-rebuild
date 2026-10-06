@@ -275,6 +275,94 @@ async function analyzeSessionMetrics(transcript) {
   };
 }
 
+// ── Semantic clustering for grammar/conjugation/agreement/phrasing patterns ───
+// Groups corrections that represent the same underlying rule (e.g., same wrong
+// tense in different sentences) so they surface as one pattern, not many.
+// word_choice is excluded — its learnerSaid→correction key already clusters well.
+
+async function clusterPatternsBySemantic(patternMap) {
+  if (!Anthropic || !process.env.ANTHROPIC_API_KEY) return patternMap;
+  const entries = Object.entries(patternMap).filter(([, p]) => p.category !== 'word_choice');
+  if (entries.length < 2) return patternMap;
+
+  const items = entries.map(([key, p], i) => ({ idx: i, key, category: p.category, correction: p.correction }));
+  const byCat = {};
+  for (const it of items) (byCat[it.category] = byCat[it.category] || []).push(it);
+
+  const catBlocks = Object.entries(byCat)
+    .map(([cat, its]) => `${cat}:\n${its.map(it => `  [${it.idx}] "${it.correction}"`).join('\n')}`)
+    .join('\n\n');
+
+  const prompt = `Group these language-learning corrections by their underlying grammar rule. Corrections that reflect the SAME mistake in different sentences belong in the same group.
+
+${catBlocks}
+
+Return ONLY a JSON code block:
+\`\`\`json
+{"groups":[[0,2],[1],[3,4]]}
+\`\`\`
+Every index must appear in exactly one group. Only group within the same category — never across. When in doubt, keep separate (singleton group). Groups of 1 are fine.`;
+
+  let groups;
+  try {
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const msg = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 512,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const text  = msg.content[0].text;
+    const block = text.match(/```json\s*([\s\S]*?)```/);
+    const bare  = text.match(/\{[\s\S]*\}/);
+    groups = JSON.parse((block ? block[1] : bare ? bare[0] : '{}').trim()).groups;
+  } catch (e) {
+    console.error('[Cluster]', e.message);
+    return patternMap;
+  }
+  if (!Array.isArray(groups)) return patternMap;
+
+  const result = {};
+  // Keep word_choice patterns unchanged
+  for (const [key, p] of Object.entries(patternMap)) {
+    if (p.category === 'word_choice') result[key] = p;
+  }
+  // Merge grammar/etc patterns by Claude's grouping
+  for (let gi = 0; gi < groups.length; gi++) {
+    const idxs = groups[gi];
+    if (!Array.isArray(idxs) || !idxs.length) continue;
+    const members = idxs.map(i => items[i]).filter(Boolean);
+    if (!members.length) continue;
+
+    const mergedSessions = new Set();
+    let mergedCount = 0;
+    let repKey = members[0].key;
+
+    for (const m of members) {
+      const orig = patternMap[m.key];
+      if (!orig) continue;
+      for (const s of orig.sessions) mergedSessions.add(s);
+      mergedCount += orig.count;
+      const cur = patternMap[repKey];
+      if (orig.sessions.size > cur.sessions.size ||
+          (orig.sessions.size === cur.sessions.size && orig.count > cur.count)) {
+        repKey = m.key;
+      }
+    }
+
+    const rep = patternMap[repKey];
+    if (!rep) continue;
+    result['cluster_' + gi] = {
+      category:    rep.category,
+      learnerSaid: rep.learnerSaid,
+      correction:  rep.correction,
+      explanation: rep.explanation,
+      sessions:    mergedSessions,
+      count:       mergedCount,
+    };
+  }
+  return result;
+}
+
 // ── CEFR-lite tier logic ──────────────────────────────────────────────────────
 
 const CEFR_TIER_DATA = [
@@ -538,6 +626,95 @@ http.createServer(async (req, res) => {
       }
 
       return json(200, session);
+    }
+
+    // GET /api/sessions-list
+    if (method === 'GET' && url === '/api/sessions-list') {
+      const user = await getUserFromRequest(req);
+      if (!user) return json(401, { error: 'Unauthorized' });
+      const supabase = getSupabaseAdmin();
+      if (!supabase) return json(500, { error: 'Supabase not configured' });
+      const { data: rows } = await supabase
+        .from('sessions')
+        .select('id, created_at, persona, duration_secs, session_errors(id)')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+      return json(200, (rows || []).map(s => ({
+        id:           s.id,
+        createdAt:    s.created_at,
+        persona:      s.persona,
+        durationSecs: s.duration_secs,
+        errorCount:   (s.session_errors || []).length,
+      })));
+    }
+
+    // GET /api/struggle-patterns?persona=&from=&to=
+    if (method === 'GET' && url.startsWith('/api/struggle-patterns')) {
+      const user = await getUserFromRequest(req);
+      if (!user) return json(401, { error: 'Unauthorized' });
+      const supabase = getSupabaseAdmin();
+      if (!supabase) return json(500, { error: 'Supabase not configured' });
+
+      const params  = new URL(req.url, 'http://x').searchParams;
+      const persona = params.get('persona') || null;
+      const from    = params.get('from')    || null;
+      const to      = params.get('to')      || null;
+
+      let sessQ = supabase.from('sessions').select('id').eq('user_id', user.id);
+      if (persona) sessQ = sessQ.eq('persona', persona);
+      if (from)    sessQ = sessQ.gte('created_at', from);
+      if (to)      sessQ = sessQ.lte('created_at', to);
+      const { data: filteredSessions } = await sessQ;
+
+      if (!filteredSessions?.length) return json(200, { totalErrors: 0, categories: [], patterns: [] });
+
+      const sessionIds = filteredSessions.map(s => s.id);
+      const { data: errors } = await supabase
+        .from('session_errors')
+        .select('id, session_id, category, severity, learner_said, correction, explanation')
+        .in('session_id', sessionIds);
+
+      if (!errors?.length) return json(200, { totalErrors: 0, categories: [], patterns: [] });
+
+      // Level 1: category breakdown
+      const catCounts = {};
+      for (const e of errors) catCounts[e.category] = (catCounts[e.category] || 0) + 1;
+      const total      = errors.length;
+      const categories = Object.entries(catCounts)
+        .sort((a, b) => b[1] - a[1])
+        .map(([cat, count]) => ({ category: cat, count, pct: Math.round(count / total * 100) }));
+
+      // Level 2: recurring pattern detection
+      // Key: category + normalized correction (for word_choice also include learner_said,
+      // since the same wrong→right word pair is the pattern, not just the right word).
+      const patternMap = {};
+      for (const e of errors) {
+        const nC  = (e.correction  || '').toLowerCase().replace(/\s+/g, ' ').trim();
+        const nL  = (e.learner_said || '').toLowerCase().replace(/\s+/g, ' ').trim();
+        const key = e.category === 'word_choice'
+          ? `${e.category}:${nL}→${nC}`
+          : `${e.category}:${nC}`;
+        if (!patternMap[key]) {
+          patternMap[key] = {
+            category:    e.category,
+            learnerSaid: e.learner_said,
+            correction:  e.correction,
+            explanation: e.explanation,
+            sessions:    new Set(),
+            count:       0,
+          };
+        }
+        patternMap[key].sessions.add(e.session_id);
+        patternMap[key].count++;
+      }
+
+      const clusteredMap = await clusterPatternsBySemantic(patternMap).catch(() => patternMap);
+      const patterns = Object.values(clusteredMap)
+        .filter(p => p.sessions.size >= 2)
+        .sort((a, b) => b.sessions.size - a.sessions.size || b.count - a.count)
+        .map(({ sessions, ...rest }) => ({ ...rest, sessionCount: sessions.size }));
+
+      return json(200, { totalErrors: total, categories, patterns });
     }
 
     // GET /api/sessions/:id

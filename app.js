@@ -336,6 +336,23 @@ CONVERSATION ANGLES (use these for real opinions, not reciting facts)
 
   var LEVEL_DESCS = ['','No prior knowledge','Complete beginner','Beginner','Elementary','Lower intermediate','Intermediate','Upper intermediate','Advanced','Proficient','Near-native'];
 
+  var PERSONA_NAMES = {
+    french: 'Claire', portuguese: 'Camila', spanish: 'Sofía',
+    japanese: 'Aoi', english: 'Emma', persian: 'Roya',
+  };
+
+  function getAuthHeaders() {
+    if (!isGuest && supabaseClient && currentUser) {
+      return supabaseClient.auth.getSession().then(function (r) {
+        var s = r && r.data && r.data.session;
+        var h = { 'Content-Type': 'application/json' };
+        if (s) h['Authorization'] = 'Bearer ' + s.access_token;
+        return h;
+      });
+    }
+    return Promise.resolve({ 'Content-Type': 'application/json' });
+  }
+
   var slider  = document.getElementById('level-slider');
   var display = document.getElementById('level-display');
   var desc    = document.getElementById('level-desc');
@@ -394,7 +411,11 @@ CONVERSATION ANGLES (use these for real opinions, not reciting facts)
         localStorage.setItem('ciao_onboarded_' + pid, '1');
       }
     }
-    function onEnd() {
+    function onEnd(e) {
+      // Safety net: if onStart didn't fire, try grabbing the ID from the end event
+      if (!conversationId && e && e.detail) {
+        conversationId = (e.detail.conversationId || e.detail.conversation_id) || null;
+      }
       if (!reviewStarted) startReview();
     }
     ['conversationStarted', 'call-started', 'elevenlabs-convai:call-started'].forEach(function (n) {
@@ -514,19 +535,7 @@ CONVERSATION ANGLES (use these for real opinions, not reciting facts)
     errorMsg.hidden = true;
     show(procScreen);
 
-    var headersPromise;
-    if (!isGuest && supabaseClient && currentUser) {
-      headersPromise = supabaseClient.auth.getSession().then(function (r) {
-        var s = r && r.data && r.data.session;
-        var h = { 'Content-Type': 'application/json' };
-        if (s) h['Authorization'] = 'Bearer ' + s.access_token;
-        return h;
-      });
-    } else {
-      headersPromise = Promise.resolve({ 'Content-Type': 'application/json' });
-    }
-
-    headersPromise
+    getAuthHeaders()
       .then(function (headers) {
         return fetch('/api/analyze-session', {
           method: 'POST',
@@ -574,6 +583,12 @@ CONVERSATION ANGLES (use these for real opinions, not reciting facts)
   var SEVERITY_LABELS = { low: 'Minor', medium: 'Noticeable', high: 'Significant' };
 
   function renderReview(session) {
+    // Show tab bar for authenticated users and reset to This Session
+    if (!isGuest) {
+      document.getElementById('rev-tabs').hidden = false;
+      switchRevTab('current');
+    }
+
     var streakEl = document.getElementById('session-streak');
     if (streakEl) {
       if (session.cleanTurnStreak > 0) {
@@ -682,5 +697,244 @@ CONVERSATION ANGLES (use these for real opinions, not reciting facts)
     });
     show(landingScreen);
   });
+
+  // ── Review tab switching ──────────────────────────────────────────────────────
+
+  var revTitle        = document.getElementById('rev-title');
+  var revTabCurrent   = document.getElementById('rev-tab-current');
+  var revTabHistory   = document.getElementById('rev-tab-history');
+  var revTabPatterns  = document.getElementById('rev-tab-patterns');
+  var historyLoaded   = false;
+  var patternsPersona = null; // currently displayed persona filter
+
+  function switchRevTab(tab) {
+    document.querySelectorAll('.rev-tab').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.tab === tab);
+    });
+    revTabCurrent.hidden  = tab !== 'current';
+    revTabHistory.hidden  = tab !== 'history';
+    revTabPatterns.hidden = tab !== 'patterns';
+    revTitle.textContent  = tab === 'current' ? 'Session Review'
+                          : tab === 'history'  ? 'Session History'
+                          :                      'Struggle Patterns';
+    if (tab === 'history')  loadHistory();
+    if (tab === 'patterns') loadPatterns(patternsPersona);
+  }
+
+  document.getElementById('rev-tabs').addEventListener('click', function (e) {
+    var btn = e.target.closest('.rev-tab');
+    if (btn) switchRevTab(btn.dataset.tab);
+  });
+
+  // ── Session history list ──────────────────────────────────────────────────────
+
+  var historyListEl = document.getElementById('history-list');
+
+  function loadHistory() {
+    historyLoaded = false; // always refresh on tab open
+    historyListEl.innerHTML = '<p class="rev-loading">Loading&hellip;</p>';
+    getAuthHeaders()
+      .then(function (h) { return fetch('/api/sessions-list', { headers: h }); })
+      .then(function (r) { return r.json(); })
+      .then(renderHistoryList)
+      .catch(function () {
+        historyListEl.innerHTML = '<p class="rev-loading" style="color:#B91C1C">Failed to load history.</p>';
+      });
+  }
+
+  function renderHistoryList(sessions) {
+    historyListEl.innerHTML = '';
+    if (!sessions.length) {
+      historyListEl.innerHTML = '<p class="rev-empty">No sessions yet &mdash; complete a conversation to see your history.</p>';
+      return;
+    }
+    sessions.forEach(function (s) { historyListEl.appendChild(buildHistoryRow(s)); });
+  }
+
+  function buildHistoryRow(session) {
+    var row = document.createElement('div');
+    row.className = 'history-row';
+
+    var personaLabel = PERSONA_NAMES[session.persona] || session.persona;
+    var errLabel = session.errorCount === 0 ? 'No errors'
+                 : session.errorCount + ' error' + (session.errorCount === 1 ? '' : 's');
+    var errClass = session.errorCount === 0 ? 'history-err-count history-clean' : 'history-err-count';
+
+    row.innerHTML =
+      '<div class="history-row-summary">' +
+        '<div class="history-row-info">' +
+          '<span class="persona-chip persona-chip-' + session.persona + '">' + esc(personaLabel) + '</span>' +
+          '<span class="history-date">' + formatHistoryDate(session.createdAt) + '</span>' +
+        '</div>' +
+        '<div class="history-row-stats">' +
+          '<span class="history-duration">' + formatDuration(session.durationSecs) + '</span>' +
+          '<span class="' + errClass + '">' + errLabel + '</span>' +
+          '<span class="history-chevron">›</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="history-row-errors" hidden></div>';
+
+    var summary  = row.querySelector('.history-row-summary');
+    var errorsEl = row.querySelector('.history-row-errors');
+    var chevron  = row.querySelector('.history-chevron');
+    var fetched  = false;
+
+    summary.addEventListener('click', function () {
+      var open = !errorsEl.hidden;
+      errorsEl.hidden = open;
+      chevron.style.transform = open ? '' : 'rotate(90deg)';
+      if (!open && !fetched) {
+        fetched = true;
+        loadHistoryErrors(session.id, errorsEl);
+      }
+    });
+
+    return row;
+  }
+
+  function loadHistoryErrors(sessionId, container) {
+    container.innerHTML = '<p class="rev-loading" style="padding:12px 0">Loading&hellip;</p>';
+    getAuthHeaders()
+      .then(function (h) { return fetch('/api/sessions/' + sessionId, { headers: h }); })
+      .then(function (r) { return r.json(); })
+      .then(function (session) {
+        if (!session.errors || !session.errors.length) {
+          container.innerHTML = '<p style="font-size:0.86rem;color:var(--text-muted);padding:8px 0">No errors recorded.</p>';
+          return;
+        }
+        renderHistoryErrors(session.errors, container);
+      })
+      .catch(function () {
+        container.innerHTML = '<p style="font-size:0.86rem;color:#B91C1C;padding:8px 0">Failed to load errors.</p>';
+      });
+  }
+
+  function renderHistoryErrors(errors, container) {
+    var catOrder = { verb_conjugation: 0, grammar: 1, gender_agreement: 2, word_choice: 3, awkward_phrasing: 4 };
+    var groups = {};
+    errors.forEach(function (e) {
+      if (!groups[e.category]) groups[e.category] = [];
+      groups[e.category].push(e);
+    });
+    var html = '';
+    Object.keys(groups)
+      .sort(function (a, b) { return (catOrder[a] ?? 9) - (catOrder[b] ?? 9); })
+      .forEach(function (cat) {
+        html += '<div class="history-cat-header">' + (CATEGORY_LABELS[cat] || cat) + '</div>';
+        groups[cat].forEach(function (err) {
+          html +=
+            '<div class="history-error">' +
+              '<div class="history-error-pair">' +
+                '<span class="history-error-said">&ldquo;' + esc(err.learnerSaid) + '&rdquo;</span>' +
+                '<span class="history-error-arrow">&rarr;</span>' +
+                '<span class="history-error-fix">' + esc(err.correction) + '</span>' +
+              '</div>' +
+              '<p class="history-error-expl">' + esc(err.explanation) + '</p>' +
+            '</div>';
+        });
+      });
+    container.innerHTML = html;
+  }
+
+  // ── Struggle Patterns view ────────────────────────────────────────────────────
+
+  var patternsContentEl = document.getElementById('patterns-content');
+  var patternsFilterEl  = document.getElementById('patterns-filter');
+
+  function buildPatternsFilter() {
+    var personas = ['', 'french', 'portuguese', 'spanish', 'japanese', 'english', 'persian'];
+    var labels   = { '': 'All personas', french: 'Claire', portuguese: 'Camila', spanish: 'Sofía', japanese: 'Aoi', english: 'Emma', persian: 'Roya' };
+    patternsFilterEl.innerHTML = '';
+    personas.forEach(function (p) {
+      var btn = document.createElement('button');
+      btn.className = 'patterns-filter-btn' + (p === (patternsPersona || '') ? ' active' : '');
+      btn.textContent = labels[p] || p;
+      btn.addEventListener('click', function () {
+        patternsPersona = p || null;
+        document.querySelectorAll('.patterns-filter-btn').forEach(function (b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        loadPatterns(patternsPersona);
+      });
+      patternsFilterEl.appendChild(btn);
+    });
+  }
+
+  function loadPatterns(persona) {
+    patternsContentEl.innerHTML = '<p class="rev-loading">Analysing your sessions&hellip;</p>';
+    var qs = persona ? '?persona=' + encodeURIComponent(persona) : '';
+    getAuthHeaders()
+      .then(function (h) { return fetch('/api/struggle-patterns' + qs, { headers: h }); })
+      .then(function (r) { return r.json(); })
+      .then(renderPatterns)
+      .catch(function () {
+        patternsContentEl.innerHTML = '<p class="rev-loading" style="color:#B91C1C">Failed to load patterns.</p>';
+      });
+  }
+
+  function renderPatterns(data) {
+    if (!data.totalErrors) {
+      patternsContentEl.innerHTML = '<p class="rev-empty">No error data yet &mdash; complete a few sessions to see patterns emerge.</p>';
+      return;
+    }
+
+    var html = '';
+
+    // Level 1: category breakdown
+    html += '<div class="patterns-section-header">Error breakdown</div>';
+    data.categories.forEach(function (c) {
+      html +=
+        '<div class="cat-bar-row">' +
+          '<div class="cat-bar-label">' +
+            '<span>' + (CATEGORY_LABELS[c.category] || c.category) + '</span>' +
+            '<span>' + c.count + ' (' + c.pct + '%)</span>' +
+          '</div>' +
+          '<div class="cat-bar-track"><div class="cat-bar-fill" style="width:' + c.pct + '%"></div></div>' +
+        '</div>';
+    });
+
+    // Level 2: recurring patterns
+    if (data.patterns.length) {
+      html += '<div class="patterns-section-header">Worth keeping an eye on</div>';
+      data.patterns.forEach(function (p) {
+        var sessWord = p.sessionCount === 1 ? 'session' : 'sessions';
+        html +=
+          '<div class="pattern-card">' +
+            '<div class="pattern-sessions">Came up across ' + p.sessionCount + ' ' + sessWord + '</div>' +
+            '<div class="pattern-pair">' +
+              '<span class="pattern-said">&ldquo;' + esc(p.learnerSaid) + '&rdquo;</span>' +
+              '<span class="pattern-arrow">&rarr;</span>' +
+              '<span class="pattern-fix">' + esc(p.correction) + '</span>' +
+            '</div>' +
+            '<p class="pattern-expl">' + esc(p.explanation) + '</p>' +
+          '</div>';
+      });
+    } else {
+      html += '<div class="patterns-section-header">Worth keeping an eye on</div>';
+      html += '<p class="rev-empty" style="padding:16px 0">Nothing to flag yet &mdash; keep practicing and any patterns that keep coming up will show here.</p>';
+    }
+
+    patternsContentEl.innerHTML = html;
+  }
+
+  // ── Formatting helpers ────────────────────────────────────────────────────────
+
+  function formatHistoryDate(iso) {
+    var d    = new Date(iso);
+    var now  = new Date();
+    var diff = Math.floor((now - d) / 86400000);
+    var time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    if (diff === 0) return 'Today, ' + time;
+    if (diff === 1) return 'Yesterday, ' + time;
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' + time;
+  }
+
+  function formatDuration(secs) {
+    if (!secs) return '—';
+    var m = Math.floor(secs / 60), s = secs % 60;
+    return m ? m + 'm ' + (s ? (s < 10 ? '0' : '') + s + 's' : '') : s + 's';
+  }
+
+  // Build the patterns filter once on load
+  buildPatternsFilter();
 
 })();

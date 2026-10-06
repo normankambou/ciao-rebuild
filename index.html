@@ -702,6 +702,180 @@
     .auth-guest-btn  { width: 100%; }
     .auth-guest-note { font-size: 0.8rem; color: var(--text-muted); text-align: center; margin-top: 10px; }
 
+    /* ── Review tabs ─────────────────────────────────────────────────────────── */
+    .rev-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 24px;
+    }
+    .rev-tab {
+      flex: 1;
+      padding: 10px 6px;
+      border: none;
+      background: transparent;
+      font-family: inherit;
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .rev-tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+    /* ── History list ─────────────────────────────────────────────────────────── */
+    .history-row {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 10px;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+    .history-row-summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      cursor: pointer;
+      gap: 12px;
+      transition: background 0.1s;
+    }
+    .history-row-summary:hover { background: rgba(27,61,107,0.025); }
+    .history-row-info { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+    .history-row-stats { display: flex; align-items: center; gap: 10px; flex-shrink: 0; font-size: 0.82rem; }
+
+    .persona-chip {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-radius: 999px;
+      padding: 3px 9px;
+      white-space: nowrap;
+    }
+    .persona-chip-french     { background: #DBEAFE; color: #1E40AF; }
+    .persona-chip-portuguese { background: #DCFCE7; color: #15803D; }
+    .persona-chip-spanish    { background: #FEE2E2; color: #991B1B; }
+    .persona-chip-japanese   { background: #FCE7F3; color: #9D174D; }
+    .persona-chip-english    { background: #E0E7FF; color: #3730A3; }
+    .persona-chip-persian    { background: #F0FDF4; color: #065F46; }
+
+    .history-date { font-size: 0.82rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .history-duration { color: var(--text-muted); }
+    .history-err-count { color: var(--orange); font-weight: 600; }
+    .history-err-count.history-clean { color: #16A34A; }
+    .history-chevron { color: var(--text-muted); font-size: 1.1rem; transition: transform 0.18s; line-height: 1; }
+
+    .history-row-errors { border-top: 1px solid var(--border); padding: 16px 20px; }
+
+    .history-cat-header {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin: 18px 0 8px;
+    }
+    .history-cat-header:first-child { margin-top: 0; }
+
+    .history-error { padding: 8px 0; border-bottom: 1px solid var(--border); }
+    .history-error:last-child { border-bottom: none; }
+    .history-error-pair {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 3px;
+    }
+    .history-error-said { font-style: italic; font-size: 0.86rem; color: var(--text-muted); }
+    .history-error-arrow { color: var(--text-muted); font-size: 0.82rem; flex-shrink: 0; }
+    .history-error-fix { font-weight: 600; font-size: 0.86rem; color: var(--blue); }
+    .history-error-expl { font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; }
+
+    /* ── Patterns view ────────────────────────────────────────────────────────── */
+    .patterns-filter {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+    }
+    .patterns-filter-btn {
+      font-family: inherit;
+      font-size: 0.8rem;
+      font-weight: 600;
+      border: 1.5px solid var(--border);
+      border-radius: 999px;
+      padding: 5px 14px;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .patterns-filter-btn.active, .patterns-filter-btn:hover { border-color: var(--blue); color: var(--blue); background: rgba(27,61,107,0.05); }
+    .patterns-filter-btn.active { background: rgba(27,61,107,0.08); }
+
+    .cat-bar-row { margin-bottom: 10px; }
+    .cat-bar-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.82rem;
+      margin-bottom: 4px;
+      color: var(--text);
+    }
+    .cat-bar-label span:last-child { color: var(--text-muted); }
+    .cat-bar-track { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+    .cat-bar-fill { height: 100%; background: var(--blue); border-radius: 3px; transition: width 0.4s; }
+
+    .pattern-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--blue);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      margin-bottom: 10px;
+    }
+    .pattern-sessions {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--orange);
+      margin-bottom: 6px;
+    }
+    .pattern-pair {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 4px;
+    }
+    .pattern-said { font-style: italic; font-size: 0.88rem; color: var(--text-muted); }
+    .pattern-arrow { color: var(--text-muted); font-size: 0.82rem; }
+    .pattern-fix { font-weight: 600; font-size: 0.88rem; color: var(--blue); }
+    .pattern-expl { font-size: 0.82rem; color: var(--text-muted); line-height: 1.5; }
+
+    .patterns-section-header {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin: 24px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    .patterns-section-header:first-child { margin-top: 0; }
+
+    /* ── Shared states ────────────────────────────────────────────────────────── */
+    .rev-loading, .rev-empty {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      padding: 32px 0;
+      text-align: center;
+    }
+
     /* ── Session streak (review screen) ─────────────────────────────────────── */
     .session-streak {
       font-size: 0.86rem;
@@ -887,14 +1061,38 @@
 
   <!-- Review screen -->
   <div id="rev-screen" class="screen" hidden>
+
     <div class="review-header">
-      <h2>Session Review</h2>
+      <h2 id="rev-title">Session Review</h2>
       <div class="review-header-actions">
         <button id="new-session-btn" class="btn-ghost">New Session</button>
       </div>
     </div>
-    <p id="session-streak" class="session-streak" hidden></p>
-    <div id="error-list"></div>
+
+    <!-- Tab bar — only shown for authenticated users -->
+    <div id="rev-tabs" class="rev-tabs" hidden>
+      <button class="rev-tab active" data-tab="current">This Session</button>
+      <button class="rev-tab"        data-tab="history">History</button>
+      <button class="rev-tab"        data-tab="patterns">Patterns</button>
+    </div>
+
+    <!-- This Session -->
+    <div id="rev-tab-current">
+      <p id="session-streak" class="session-streak" hidden></p>
+      <div id="error-list"></div>
+    </div>
+
+    <!-- History -->
+    <div id="rev-tab-history" hidden>
+      <div id="history-list"><p class="rev-loading">Loading&hellip;</p></div>
+    </div>
+
+    <!-- Patterns -->
+    <div id="rev-tab-patterns" hidden>
+      <div class="patterns-filter" id="patterns-filter"></div>
+      <div id="patterns-content"><p class="rev-loading">Loading&hellip;</p></div>
+    </div>
+
   </div>
 
   <script src="https://elevenlabs.io/convai-widget/index.js" async></script>
